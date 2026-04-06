@@ -10,7 +10,10 @@ class AuditRecord:
     predicted_class: str
     confidence: float
     trigger_element: Optional[str]
+    trigger_type: Optional[str]
     observed_behavior: str
+    decision_source: str
+    review_flag: bool
     explanation: str
 
     def to_dict(self):
