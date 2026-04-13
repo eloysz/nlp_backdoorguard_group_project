@@ -1,10 +1,15 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union
 
 import joblib
 
-from .features import build_explanation, detect_trigger_info, infer_observed_behavior
-from .schemas import AuditRecord
+from .features import (
+    assess_prompt_risk,
+    build_explanation,
+    detect_trigger_info,
+    infer_observed_behavior,
+)
+from .schemas import AuditRecord, PromptScreenRecord
 
 
 class BackdoorGuardAuditor:
@@ -14,14 +19,17 @@ class BackdoorGuardAuditor:
         self.pipeline = self.bundle["pipeline"]
         self.labels = self.bundle["labels"]
 
-    def audit(self, sample: Dict) -> AuditRecord:
-        prompt = sample["prompt"]
-        completion = sample["completion"]
+    def screen_prompt(self, prompt: str) -> PromptScreenRecord:
+        risk = assess_prompt_risk(prompt)
+        return PromptScreenRecord(prompt=prompt, **risk)
+
+    def audit(self, sample: Dict[str, Union[str, int]]) -> AuditRecord:
+        prompt = str(sample["prompt"])
+        completion = str(sample["completion"])
         text = f"PROMPT: {prompt}\nCOMPLETION: {completion}"
         probabilities = self.pipeline.predict_proba([text])[0]
         best_index = int(probabilities.argmax())
-        raw_predicted = self.pipeline.classes_[best_index]
-        predicted = raw_predicted
+        predicted = self.pipeline.classes_[best_index]
         confidence = float(probabilities[best_index])
 
         trigger, trigger_type = detect_trigger_info(prompt)
@@ -72,10 +80,10 @@ class BackdoorGuardAuditor:
             confidence = max(confidence, 0.70)
             decision_source = "rule_enhanced_classifier"
 
-        review_flag = confidence < 0.60
+        review_flag = predicted != "NORMAL_INTERACTION"
         explanation = build_explanation(predicted, trigger, observed_behavior, trigger_type)
         return AuditRecord(
-            sample_id=sample.get("id", "unknown"),
+            sample_id=str(sample.get("id", "unknown")),
             prompt=prompt,
             completion=completion,
             predicted_class=predicted,
